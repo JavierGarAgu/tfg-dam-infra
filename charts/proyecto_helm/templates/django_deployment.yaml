@@ -1,0 +1,30 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: django
+spec:
+  replicas: {{ .Values.django.replicas }}
+  selector:
+    matchLabels:
+      app: django
+  template:
+    metadata:
+      labels:
+        app: django
+    spec:
+      containers:
+        - name: django
+          image: {{ .Values.django.image }}
+          ports:
+            - containerPort: {{ .Values.django.containerPort }}
+          env:
+            - name: POSTGRES_DB
+              value: {{ .Values.django.env.POSTGRES_DB | quote }}
+            - name: POSTGRES_USER
+              value: {{ .Values.django.env.POSTGRES_USER | quote }}
+            - name: POSTGRES_PASSWORD
+              value: {{ .Values.django.env.POSTGRES_PASSWORD | quote }}
+            - name: POSTGRES_HOST
+              value: {{ .Values.django.env.POSTGRES_HOST | quote }}
+            - name: POSTGRES_PORT
+              value: {{ .Values.django.env.POSTGRES_PORT | quote }}

@@ -1,0 +1,47 @@
+name: sync cicd a frontend y backend
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  ORG_OWNER: "${{ secrets.ORG_OWNER }}"
+  REPO1_NAME: "${{ secrets.REPO1_NAME }}"
+  REPO2_NAME: "${{ secrets.REPO2_NAME }}"
+  REPO_TOKEN: "${{ secrets.REPO_TOKEN }}"
+  WORKFLOW_FILE: ".github/workflows/cicd.yml"
+  BRANCH_NAME: "JavierGarciaExercises"
+
+jobs:
+  sync-cicd:
+    runs-on: [self-hosted]
+    steps:
+      - name: Checkout repo1
+        uses: actions/checkout@v4
+        with:
+          repository: "${{ env.ORG_OWNER }}/${{ env.REPO1_NAME }}"
+          token: "${{ env.REPO_TOKEN }}"
+          path: repo1
+
+      - name: Checkout repo2
+        uses: actions/checkout@v4
+        with:
+          repository: "${{ env.ORG_OWNER }}/${{ env.REPO2_NAME }}"
+          token: "${{ env.REPO_TOKEN }}"
+          path: repo2
+
+
+      - name: Copiar workflow a repo2
+        uses: ./repo1/.github/actions/copiar_workflow
+        with:
+          src: "repo1/${{ env.WORKFLOW_FILE }}"
+          dest: "repo2/${{ env.WORKFLOW_FILE }}"
+
+      - name: Commit y push repo2
+        uses: ./repo1/.github/actions/git_commit_push
+        with:
+          repo-path: repo2
+          commit-message: "Sync cicd workflow desde el repo1"
+          branch: "${{ env.BRANCH_NAME }}"
+          file-path: "${{ env.WORKFLOW_FILE }}"
+

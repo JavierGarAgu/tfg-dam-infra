@@ -1,0 +1,33 @@
+name: 'terraform destroy'
+
+on: 
+    workflow_call:
+
+env:
+  ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
+  ARM_CLIENT_SECRET: "${{secrets.AZURE_CLIENT_SECRET}}"
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+
+jobs:
+  terraform-plan:
+    name: terraform destroy
+    runs-on: ubuntu-latest
+    steps:
+    - name: Checkout del propio repositorio
+      uses: actions/checkout@v4
+      with:
+        path: terraform
+      
+    - name: instalar Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: preparar node
+      uses: actions/setup-node@v3
+
+    - name: realizar init
+      run: terraform -chdir=${{ github.workspace }}/terraform/iac/modulo init
+
+    - name: realizar destroy
+      run: terraform -chdir=${{ github.workspace }}/terraform/iac/modulo destroy -auto-approve
+  

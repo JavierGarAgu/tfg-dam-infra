@@ -1,0 +1,24 @@
+name: Build and Push Docker Image
+description: Construye y sube imagen docker al ACR
+
+inputs:
+  image_name:
+    description: 'Nombre de la imagen docker'
+    required: true
+  context_path:
+    description: 'Ruta para docker build'
+    required: true
+  version:
+    description: 'Versión para taggear'
+    required: true
+  acr_name:
+    description: 'Nombre del ACR (sin .azurecr.io)'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      run: |
+        docker build -t ${{ inputs.acr_name }}.azurecr.io/${{ inputs.image_name }}:${{ inputs.version }} ${{ inputs.context_path }}
+        docker push ${{ inputs.acr_name }}.azurecr.io/${{ inputs.image_name }}:${{ inputs.version }}

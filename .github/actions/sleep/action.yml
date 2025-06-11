@@ -1,0 +1,12 @@
+name: Sleep Action
+
+description: Espera fija de 10 segundos
+
+runs:
+  using: "composite"
+  steps:
+    - name: Sleep 10s
+      run: |
+        echo "Esperando 10 segundos para que los secretos se apliquen..."
+        sleep 10
+      shell: bash

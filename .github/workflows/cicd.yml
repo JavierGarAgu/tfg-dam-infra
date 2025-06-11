@@ -1,0 +1,192 @@
+name: CICD todos los repos
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  CI:
+    runs-on: [self-hosted]
+    outputs:
+      version_django: ${{ steps.f_version.outputs.version }}
+      version_nginx: ${{ steps.b_version.outputs.version }}
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      ORG_OWNER: ${{ secrets.ORG_OWNER }}
+      REPO1_NAME: ${{ secrets.REPO1_NAME }}
+      REPO2_NAME: ${{ secrets.REPO2_NAME }}
+      REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+
+    steps:
+      - name: Login a Azure
+        run: |
+          az login --service-principal \
+            --username "$AZURE_CLIENT_ID" \
+            --password "$AZURE_CLIENT_SECRET" \
+            --tenant "$AZURE_TENANT_ID"
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+
+      - name: prueba docker
+        run: echo $(whoami)
+
+      - name: Login a ACR
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Checkout django
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ORG_OWNER }}/${{ env.REPO2_NAME }}
+          ref: main
+          path: django
+          token: ${{ env.REPO_TOKEN }}
+
+      - name: Checkout acciones
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ORG_OWNER }}/${{ env.REPO1_NAME }}
+          ref: main
+          path: actions
+          token: ${{ env.REPO_TOKEN }}
+
+      - name: Obtener versión django
+        id: f_version
+        uses: ./actions/.github/actions/obtener_version
+        with:
+          type: django
+          path: django/aplicacion/package.json
+
+      - name: Obtener versión nginx
+        id: b_version
+        uses: ./actions/.github/actions/obtener_version
+        with:
+          type: nginx
+          path: django/nginx/pom.xml
+
+      - name: DEBUG version django
+        run: echo ${{ steps.f_version.outputs.version }}
+
+      - name: DEBUG version nginx
+        run: echo ${{ steps.b_version.outputs.version }}
+
+      - name: Build y push imagen django
+        uses: ./actions/.github/actions/docker_build
+        with:
+          image_name: django
+          context_path: ./django/aplicacion
+          version: ${{ steps.f_version.outputs.version }}
+          acr_name: ${{ env.ACR_NAME }}
+
+      - name: Build y push imagen nginx
+        uses: ./actions/.github/actions/docker_build
+        with:
+          image_name: nginx
+          context_path: ./django/nginx
+          version: ${{ steps.b_version.outputs.version }}
+          acr_name: ${{ env.ACR_NAME }}
+
+  pre-CD:
+    needs: CI
+    runs-on: [self-hosted]
+    outputs:
+      chart_name: ${{ steps.extract_chart_name.outputs.chart_name }}
+      chart_version: ${{ steps.extract_chart_version.outputs.chart_version }}
+    env:
+      ORG_OWNER: ${{ secrets.ORG_OWNER }}
+      REPO1_NAME: ${{ secrets.REPO1_NAME }}
+      REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+
+    steps:
+      - name: Checkout chart
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ORG_OWNER }}/${{ env.REPO1_NAME }}
+          ref: main
+          path: repo
+          token: ${{ env.REPO_TOKEN }}
+
+      - name: Extraer nombre del chart
+        id: extract_chart_name
+        run: |
+          CHART_NAME=$(grep '^name:' repo/charts/proyecto_helm/Chart.yaml | awk '{print $2}')
+          echo "chart_name=$CHART_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Extraer versión del chart
+        id: extract_chart_version
+        run: |
+          CHART_VERSION=$(grep '^version:' repo/charts/proyecto_helm/Chart.yaml | awk '{print $2}')
+          echo "chart_version=$CHART_VERSION" >> "$GITHUB_OUTPUT"
+
+  CD:
+    needs: [CI, pre-CD]
+    runs-on: [self-hosted]
+
+    env:
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      ACR_NAME: ${{ secrets.ACR_NAME }}
+      AKS_NAME: ${{ secrets.AKS_NAME }}
+      RG_NAME: ${{ secrets.RG_NAME }}
+      F_VERSION: ${{ needs.CI.outputs.version_django }}
+      B_VERSION: ${{ needs.CI.outputs.version_nginx }}
+      HARBOR_URL: ${{ secrets.HARBOR_URL }}
+      HARBOR_USER: ${{ secrets.HARBOR_USER }}
+      HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
+      CHART_NAME: ${{ needs.pre-CD.outputs.chart_name }}
+      CHART_VERSION: ${{ needs.pre-CD.outputs.chart_version }}
+      BBDD_HOST: ${{ secrets.BBDD_HOST }}
+      BBDD_USER: ${{ secrets.BBDD_USER }}
+      BBDD_PASS: ${{ secrets.BBDD_PASS }}
+
+    steps:
+      - name: Login a Azure
+        run: |
+          az login --service-principal \
+            --username "$AZURE_CLIENT_ID" \
+            --password "$AZURE_CLIENT_SECRET" \
+            --tenant "$AZURE_TENANT_ID"
+          az account set --subscription "$AZURE_SUBSCRIPTION_ID"
+
+      - name: Login a ACR
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Login a AKS
+        run: az aks get-credentials --resource-group "$RG_NAME" --name "$AKS_NAME" --overwrite-existing
+
+      - name: Login a Harbor
+        run: |
+          helm registry login $HARBOR_URL \
+            --username $HARBOR_USER \
+            --password $HARBOR_PASS
+
+      - name: Helm upgrade desde Harbor
+        run: |
+          helm upgrade --install rrhh oci://$HARBOR_URL/library/$CHART_NAME \
+            --version $CHART_VERSION \
+            --namespace jga \
+            --create-namespace \
+            --set django.image=$ACR_NAME.azurecr.io/django \
+            --set django.tag=$F_VERSION \
+            --set nginx.image=$ACR_NAME.azurecr.io/nginx \
+            --set nginx.tag=$B_VERSION \
+            --set django.env.POSTGRES_HOST=$BBDD_HOST \
+            --set django.env.POSTGRES_USER=$BBDD_USER \
+            --set django.env.POSTGRES_PASSWORD=$BBDD_PASS
+
+      - name: Harbor LOGOUT
+        run: |
+          helm registry logout $HARBOR_URL
+
+      - name: Logout de Azure
+        run: az logout
+
+      - name: Logout de ACR
+        run: docker logout $ACR_NAME.azurecr.io
+
+      - name: Logout de AKS
+        run: kubectl config delete-context "$AKS_NAME"

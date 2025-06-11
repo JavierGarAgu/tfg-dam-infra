@@ -1,0 +1,27 @@
+name: ssh-connectivity
+
+description: "Testea conectividad SSH"
+
+inputs:
+  ssh_user:
+    description: "Usuario SSH"
+    required: true
+  ssh_host:
+    description: "Host SSH (IP o dominio)"
+    required: true
+  bbdd_host:
+    description: "Host de la bbdd privado"
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Testear conexión SSH a vm pública
+      run: ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -o BatchMode=yes ${{ inputs.ssh_user }}@${{ inputs.ssh_host }} echo "SSH pública OK"
+      shell: bash
+
+    - name: Testear conexión SSH a vm privada desde vm pública
+      run: |
+        ssh -o StrictHostKeyChecking=no -i ~/.ssh/id_rsa -o BatchMode=yes ${{ inputs.ssh_user }}@${{ inputs.ssh_host }} "ssh -o StrictHostKeyChecking=no -o BatchMode=yes ${{ inputs.ssh_user }}@${{ inputs.bbdd_host }} echo 'SSH privada OK'"
+      shell: bash
+

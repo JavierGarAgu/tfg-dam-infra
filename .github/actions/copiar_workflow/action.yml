@@ -1,0 +1,21 @@
+name: Copy Workflow File
+description: Copia un archivo workflow de un path a otro
+
+inputs:
+  src:
+    description: 'Archivo origen'
+    required: true
+  dest:
+    description: 'Archivo destino'
+    required: true
+
+runs:
+  using: "composite"
+  steps:
+    - name: Crear carpeta destino y copiar archivo
+      shell: bash
+      run: |
+        echo "Copiando archivo desde '${{ inputs.src }}' a '${{ inputs.dest }}'"
+        mkdir -p "$(dirname "${{ inputs.dest }}")"
+        cp "${{ inputs.src }}" "${{ inputs.dest }}"
+        echo "Archivo copiado correctamente"

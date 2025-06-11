@@ -1,0 +1,129 @@
+name: terraform apply
+
+on: 
+  workflow_call:
+  pull_request:
+    types: [closed]
+    branches:
+      - main
+
+env:
+  ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
+  ARM_CLIENT_SECRET: "${{ secrets.AZURE_CLIENT_SECRET }}"
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+  REPO_TOKEN: "${{ secrets.REPO_TOKEN }}"
+  ORG_OWNER: "${{ secrets.ORG_OWNER }}"
+  REPO1_NAME: "${{ secrets.REPO1_NAME }}"
+  REPO2_NAME: "${{ secrets.REPO2_NAME }}"
+  REPO3_NAME: "${{ secrets.REPO3_NAME }}"
+
+jobs:
+  terraform-apply:
+    if: (github.event_name == 'pull_request' && github.event.pull_request.merged == true) || github.event_name == 'workflow_dispatch'
+    name: terraform aplicando infra
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del propio repositorio
+        uses: actions/checkout@v4
+        with:
+          path: terraform
+      
+      - name: Instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Preparar Node.js
+        uses: actions/setup-node@v3
+
+      - name: Terraform Init
+        run: terraform -chdir=${{ github.workspace }}/terraform/iac/modulo init
+
+      - name: Terraform Apply
+        run: terraform -chdir=${{ github.workspace }}/terraform/iac/modulo apply -auto-approve
+
+      - name: Exportar outputs a variables de entorno
+        run: |
+          cd terraform/iac/modulo
+          echo "BBDD_HOST=$(terraform output -raw vm_private_ip)" >> $GITHUB_ENV
+          echo "RUNNER_HOST=$(terraform output -raw vm_public_ip)" >> $GITHUB_ENV
+          echo "AKS_NAME=$(terraform output -raw aks_name)" >> $GITHUB_ENV
+          echo "ACR_NAME=$(terraform output -raw acr_name)" >> $GITHUB_ENV
+          echo "RG_NAME=$(terraform output -raw resource_group_name)" >> $GITHUB_ENV
+          echo "SSH_KEY<<EOF" >> $GITHUB_ENV
+          terraform output -raw vm_private_key >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Crear script Python para encriptar y subir secretos
+        run: |
+          mkdir -p secret-scripts
+          cat > secret-scripts/set-secrets.py <<EOF
+          import os
+          import base64
+          import requests
+          from nacl import encoding, public
+
+          token = os.environ['REPO_TOKEN']
+
+          repos = [
+              {"owner": os.environ['ORG_OWNER'], "repo": os.environ['REPO1_NAME']},
+              {"owner": os.environ['ORG_OWNER'], "repo": os.environ['REPO2_NAME']},
+              {"owner": os.environ['ORG_OWNER'], "repo": os.environ['REPO3_NAME']}
+          ]
+
+          secrets = {
+              "BBDD_HOST": os.environ.get('BBDD_HOST'),
+              "RUNNER_HOST": os.environ.get('RUNNER_HOST'),
+              "SSH_KEY": os.environ.get('SSH_KEY'),
+              "AKS_NAME": os.environ.get('AKS_NAME'),
+              "ACR_NAME": os.environ.get('ACR_NAME'),
+              "RG_NAME": os.environ.get('RG_NAME'),
+          }
+
+          def encrypt_secret(public_key: str, secret_value: str) -> str:
+              public_key = public.PublicKey(public_key.encode("utf-8"), encoding.Base64Encoder())
+              sealed_box = public.SealedBox(public_key)
+              encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
+              return base64.b64encode(encrypted).decode("utf-8")
+
+          headers = {
+              "Authorization": f"token {token}",
+              "Accept": "application/vnd.github+json"
+          }
+
+          for repo_info in repos:
+              owner = repo_info["owner"]
+              repo = repo_info["repo"]
+              print(f"Procesando repo {owner}/{repo}")
+              url = f"https://api.github.com/repos/{owner}/{repo}/actions/secrets/public-key"
+              r = requests.get(url, headers=headers)
+              r.raise_for_status()
+              public_key_data = r.json()
+              key_id = public_key_data["key_id"]
+              key = public_key_data["key"]
+
+              for secret_name, secret_value in secrets.items():
+                  if not secret_value:
+                      print(f"[WARN] No hay valor para {secret_name}, se omite")
+                      continue
+
+                  encrypted_value = encrypt_secret(key, secret_value)
+                  put_url = f"https://api.github.com/repos/{owner}/{repo}/actions/secrets/{secret_name}"
+                  payload = {
+                      "encrypted_value": encrypted_value,
+                      "key_id": key_id
+                  }
+
+                  put_resp = requests.put(put_url, headers=headers, json=payload)
+                  if put_resp.status_code == 201 or put_resp.status_code == 204:
+                      print(f" Secreto '{secret_name}' creado en {owner}/{repo}")
+                  else:
+                      print(f" Error creando secreto '{secret_name}' en {owner}/{repo}: {put_resp.status_code} - {put_resp.text}")
+          EOF
+
+      - name: Instalar dependencias Python para secret encryption
+        run: |
+          python3 -m pip install --upgrade pip
+          pip install pynacl requests
+
+      - name: Ejecutar script Python para setear secretos en los repos
+        run: python3 secret-scripts/set-secrets.py

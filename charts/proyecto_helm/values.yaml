@@ -1,27 +1,19 @@
-imagen_backend:
-  repository: acrjgarcia123.azurecr.io/jga-backend
+django:
+  image: miapp-django
   tag: 1
-  pullPolicy: IfNotPresent
+  replicas: 2
+  env:
+    POSTGRES_DB: proyecto_final
+    POSTGRES_USER: usuario
+    POSTGRES_PASSWORD: contraseña
+    POSTGRES_HOST: host
+    POSTGRES_PORT: "5432"
+  containerPort: 8000
 
-service_backend:
-  type: ClusterIP
-  port: 8080
-
-env:
-  SPRING_DB_HOST: 10.0.1.5
-  SPRING_DB_PORT: "5432"
-  SPRING_DB_NAME: proyecto_final
-  SPRING_DB_USER: root
-  SPRING_DB_PASSWORD: password
-
-resources: {}
-
-imagen_frontend:
-  repository: acrjgarcia123.azurecr.io/jga-frontend
+nginx:
+  image: miapp-nginx
   tag: 1
-  pullPolicy: IfNotPresent
- 
-service_frontend:
-  type: LoadBalancer
-  port: 80
- 
+  replicas: 2
+  containerPort: 80
+  service:
+    type: LoadBalancer
