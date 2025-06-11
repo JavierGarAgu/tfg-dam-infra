@@ -1,0 +1,100 @@
+name: setup ansible con tests
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  conditional-ansible:
+    runs-on: [self-hosted]
+
+    env:
+      STORAGE_ACCOUNT: ${{ secrets.STORAGE_NAME }}
+      AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+      AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+      AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+      AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+      AKS_NAME: ${{ secrets.AKS_NAME }}
+      RG_NAME: ${{ secrets.RG_NAME }}
+      VAULT_PASSWORD: ${{ secrets.CONTRA_ANSIBLE }}
+      BBDD_PASS: ${{ secrets.BBDD_PASS }}
+      BBDD_HOST: ${{ secrets.BBDD_HOST }}
+      BBDD_USER: ${{ secrets.BBDD_USER }}
+      RUNNER_HOST: ${{ secrets.RUNNER_HOST }}
+      RUNNER_USER: ${{ secrets.RUNNER_USER }}
+      HARBOR_URL: ${{ secrets.HARBOR_URL }}
+      GRAFANA_URL: ${{ secrets.GRAFANA_URL }}
+      GRAFANA_PASS: ${{ secrets.GRAFANA_PASS }}
+      GRAFANA_USER: ${{ secrets.GRAFANA_USER }}
+      REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      REPO_NAME: ${{secrets.REPO1_NAME}}
+      ORG_NAME: ${{secrets.ORG_OWNER}}
+
+    steps:
+      - name: Checkout repo ansible
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ORG_NAME }}/${{ env.REPO_NAME }}
+          ref: main
+          token: ${{ env.REPO_TOKEN }}
+          path: ansible_repo
+
+      - name: Test conexión PostgreSQL y ejecutar playbook si falla
+        run: |
+          set -e
+          cd ansible_repo/ansible
+          echo "Probando conexión a PostgreSQL..."
+          if PGPASSWORD=$BBDD_PASS psql -h $BBDD_HOST -U $BBDD_USER -d proyecto_final -c '\l' | grep proyecto_final; then
+            echo "PostgreSQL OK, no ejecuto playbook install_postgresql."
+          else
+            echo "Fallo conexión a PostgreSQL, ejecutando playbook install_postgresql..."
+            chmod +x vault.sh
+            ansible-playbook -i inventory/dev.ini playbooks/install_postgresql.yml \
+              --vault-password-file ./vault.sh \
+              --extra-vars "bbdd_host=$BBDD_HOST runner_user=$RUNNER_USER bbdd_user=$BBDD_USER bbdd_password=$BBDD_PASS storage_account=$STORAGE_ACCOUNT azure_client_id=$AZURE_CLIENT_ID azure_subscription_id=$AZURE_SUBSCRIPTION_ID azure_client_secret=$AZURE_CLIENT_SECRET azure_tenant_id=$AZURE_TENANT_ID"
+          fi
+
+      - name: Test cronjob y ejecutar playbook backup si falla
+        run: |
+          set -e
+          cd ansible_repo/ansible
+          echo "Verificando cronjob de backup..."
+          if sudo crontab -l -u root | grep -q "Backup diario de proyecto_final y subida a Azure Blob"; then
+            echo "Cronjob OK, no ejecuto playbook backup_postgresql."
+          else
+            echo "Cronjob NO encontrado en root, ejecutando playbook backup_postgresql..."
+            chmod +x vault.sh
+            ansible-playbook -i inventory/dev.ini playbooks/backup_postgresql.yml \
+              --vault-password-file ./vault.sh \
+              --extra-vars "db_host=$BBDD_HOST storage_account=$STORAGE_ACCOUNT azure_client_id=$AZURE_CLIENT_ID azure_client_secret=$AZURE_CLIENT_SECRET azure_tenant_id=$AZURE_TENANT_ID azure_subscription_id=$AZURE_SUBSCRIPTION_ID"
+          fi
+
+      - name: Test ping host y ejecutar playbook harbor_aks si falla
+        run: |
+          set -e
+          cd ansible_repo/ansible
+          echo "Probando ping a $HARBOR_URL"
+          if ping -c 4 $HARBOR_URL; then
+            echo "Ping OK, no ejecuto playbook harbor_aks."
+          else
+            echo "Ping FALLÓ, ejecutando playbook harbor_aks..."
+            chmod +x vault.sh
+            ansible-playbook -i inventory/dev.ini playbooks/harbor_aks.yml \
+              --vault-password-file ./vault.sh \
+              --extra-vars "azure_client_id=$AZURE_CLIENT_ID azure_client_secret=$AZURE_CLIENT_SECRET azure_tenant_id=$AZURE_TENANT_ID azure_subscription_id=$AZURE_SUBSCRIPTION_ID k8s_cluster_name=$AKS_NAME k8s_resource_group=$RG_NAME harbor_host=$HARBOR_URL"
+          fi
+
+      - name: Test ping host y ejecutar playbook grafana_stack si falla
+        run: |
+          set -e
+          cd ansible_repo/ansible
+          echo "Probando ping a $GRAFANA_URL"
+          if ping -c 4 $GRAFANA_URL; then
+            echo "Ping OK, no ejecuto playbook grafana_stack."
+          else
+            echo "Ping FALLÓ, ejecutando playbook grafana_stack..."
+            chmod +x vault.sh
+            ansible-playbook -i inventory/dev.ini playbooks/grafana_stack.yml \
+              --vault-password-file ./vault.sh \
+              --extra-vars "azure_client_id=$AZURE_CLIENT_ID azure_client_secret=$AZURE_CLIENT_SECRET azure_tenant_id=$AZURE_TENANT_ID azure_subscription_id=$AZURE_SUBSCRIPTION_ID k8s_cluster_name=$AKS_NAME k8s_resource_group=$RG_NAME grafana_namespace=monitor grafana_user=$GRAFANA_USER grafana_pass=$GRAFANA_PASS grafana_host=$GRAFANA_URL"
+          fi

@@ -31,9 +31,16 @@
   shell: |
     sudo -u postgres dropdb --if-exists proyecto_final
     sudo -u postgres createdb -O {{ bbdd_user }} proyecto_final
-    sudo -u postgres pg_restore -d proyecto_final /tmp/proyecto_final.backup
+  # sudo -u postgres pg_restore -d proyecto_final /tmp/proyecto_final.backup
   args:
     executable: /bin/bash
+
+- name: Ejecutar script SQL para inicializar la base
+  community.postgresql.postgresql_query:
+    db: proyecto_final
+    login_user: "{{ bbdd_user }}"
+    login_password: "{{ bbdd_password }}"
+    query: "{{ lookup('file', '/tmp/init.sql') }}"
 
 - name: Habilitar conexiones externas (postgresql.conf)
   lineinfile:

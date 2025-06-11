@@ -1,0 +1,33 @@
+name: Git Commit and Push
+description: Commit y push en repo local con path configurado
+inputs:
+  repo-path:
+    description: 'Path del repositorio local'
+    required: true
+  commit-message:
+    description: 'Mensaje de commit'
+    required: true
+  branch:
+    description: 'Nombre de la rama donde hacer push'
+    required: true
+  file-path:
+    description: 'Path relativo al repo del archivo o carpeta a agregar'
+    required: true
+runs:
+  using: "composite"
+  steps:
+  - name: Commit y push
+    shell: bash
+    run: |
+      cd "${{ inputs.repo-path }}"
+      git config user.name "github-actions"
+      git config user.email "actions@github.com"
+      git checkout -B "${{ inputs.branch }}"
+      git add "${{ inputs.file-path }}"
+      if ! git diff --cached --quiet; then
+        git commit -m "${{ inputs.commit-message }}"
+        git pull origin "${{ inputs.branch }}" --rebase || true
+        git push --set-upstream origin "${{ inputs.branch }}"
+      else
+        echo "No hay cambios para commitear"
+      fi

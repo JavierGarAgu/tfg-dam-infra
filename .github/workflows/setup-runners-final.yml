@@ -1,0 +1,177 @@
+name: setup todos los repos
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  setup-runners-todos:
+    runs-on: ubuntu-latest
+
+    env:
+      REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      ORG_OWNER: ${{ secrets.ORG_OWNER }}
+      SSH_KEY: ${{ secrets.SSH_KEY }}
+      RUNNER_USER: ${{ secrets.RUNNER_USER }}
+      RUNNER_HOST: ${{ secrets.RUNNER_HOST }}
+      REPO1_NAME: ${{ secrets.REPO1_NAME }}
+      REPO2_NAME: ${{ secrets.REPO2_NAME }}
+
+    steps:
+      - name: Obtener token y eliminar runners duplicados en GitHub
+        id: cleanup_github
+        run: |
+          set -e
+
+          HEADERS=(-H "Authorization: Bearer $REPO_TOKEN" -H "Accept: application/vnd.github+json")
+          API_URL="https://api.github.com"
+
+          delete_runner_by_name() {
+            local REPO=$1
+            local NAME=$2
+
+            echo "-> Buscando runner '$NAME' en $REPO..."
+            RUNNERS=$(curl -s "${HEADERS[@]}" "$API_URL/repos/${ORG_OWNER}/${REPO}/actions/runners")
+            RUNNER_ID=$(echo "$RUNNERS" | jq ".runners[] | select(.name == \"$NAME\") | .id")
+
+            if [ ! -z "$RUNNER_ID" ]; then
+              echo "-> Runner encontrado con ID $RUNNER_ID. Eliminando..."
+              curl -s -X DELETE "${HEADERS[@]}" "$API_URL/repos/${ORG_OWNER}/${REPO}/actions/runners/$RUNNER_ID"
+              echo "-> Runner $NAME eliminado de GitHub."
+            else
+              echo "-> No se encontró runner con nombre $NAME en $REPO."
+            fi
+          }
+
+          delete_runner_by_name "$REPO1_NAME" "jga-1"
+          delete_runner_by_name "$REPO2_NAME" "jga-2"
+
+          echo "Obteniendo tokens..."
+          REPO1_TOKEN=$(curl -s -X POST "${HEADERS[@]}" "$API_URL/repos/${ORG_OWNER}/${REPO1_NAME}/actions/runners/registration-token" | jq -r .token)
+          REPO2_TOKEN=$(curl -s -X POST "${HEADERS[@]}" "$API_URL/repos/${ORG_OWNER}/${REPO2_NAME}/actions/runners/registration-token" | jq -r .token)
+
+          echo "::add-mask::$REPO1_TOKEN"
+          echo "::add-mask::$REPO2_TOKEN"
+
+          echo "REPO1_TOKEN=$REPO1_TOKEN" >> $GITHUB_ENV
+          echo "REPO2_TOKEN=$REPO2_TOKEN" >> $GITHUB_ENV
+
+      - name: Generar script de instalación en VM
+        run: |
+          cat << 'EOF' > setup_runners.sh
+          #!/bin/bash
+          set -e
+
+          TEMP_DIR="$HOME/tmp-gh-runner"
+          mkdir -p "$TEMP_DIR"
+          cd "$TEMP_DIR"
+
+          echo "==> Instalando dependencias..."
+          sudo apt-get update && sudo apt-get install -y curl tar jq psmisc
+
+          echo "==> Descargando GitHub Actions runner..."
+          curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.315.0/actions-runner-linux-x64-2.315.0.tar.gz
+
+          echo "==> Preparando carpeta temporal para el runner..."
+          mkdir -p runner-tar
+          cp actions-runner.tar.gz runner-tar/
+
+          wipe_runners() {
+            echo "==> Matando procesos de runners activos..."
+            pkill -f runsvc.sh || true
+            pkill -f Runner.Listener || true
+            sleep 2
+
+            echo "==> Borrando todos los runners existentes..."
+            local BASE_DIR="/opt/github-runner"
+            if [ -d "$BASE_DIR" ]; then
+              for d in "$BASE_DIR"/*; do
+                if [ -d "$d" ]; then
+                  echo "Parando y eliminando runner en $d"
+                  cd "$d"
+                  if [ -f "./svc.sh" ]; then
+                    sudo ./svc.sh stop || true
+                    sudo ./svc.sh uninstall || true
+                  fi
+                fi
+              done
+              sudo rm -rf "$BASE_DIR"
+            fi
+          }
+
+          setup_runner() {
+            local NAME=$1
+            local URL=$2
+            local TOKEN=$3
+            local LABEL=$4
+            local DIR="/opt/github-runner/$NAME"
+
+            echo "==> Configurando runner $NAME en $DIR"
+            sudo mkdir -p "$DIR"
+            sudo cp "$TEMP_DIR/runner-tar/actions-runner.tar.gz" "$DIR"
+            cd "$DIR"
+            sudo tar xzf actions-runner.tar.gz
+            sudo chown -R $USER:$USER "$DIR"
+
+            ./config.sh --url "$URL" --token "$TOKEN" --name "$NAME" --labels "$LABEL" --unattended
+
+            sudo ./svc.sh install
+            sudo ./svc.sh start
+          }
+
+          wipe_runners
+
+          REPO1_URL="https://github.com/${ORG_OWNER}/${REPO1_NAME}"
+          REPO2_URL="https://github.com/${ORG_OWNER}/${REPO2_NAME}"
+
+          setup_runner "jga-1" "$REPO1_URL" "$REPO1_TOKEN" "repo1-runner"
+          setup_runner "jga-2" "$REPO2_URL" "$REPO2_TOKEN" "repo2-runner"
+
+          echo "==> Todos los runners configurados desde cero correctamente."
+          EOF
+
+      - name: Transferir script por SSH
+        run: |
+          echo "$SSH_KEY" > key.pem
+          chmod 600 key.pem
+          scp -o StrictHostKeyChecking=no -i key.pem setup_runners.sh $RUNNER_USER@$RUNNER_HOST:/home/$RUNNER_USER/setup_runners.sh
+
+      - name: Reiniciar máquina remota (error esperado)
+        continue-on-error: true
+        run: |
+          echo "$SSH_KEY" > key.pem
+          chmod 600 key.pem
+
+          ssh -o StrictHostKeyChecking=no -i key.pem $RUNNER_USER@$RUNNER_HOST << EOF || true
+            echo "==> Reiniciando sistema remoto para aplicar cambios..."
+            sudo reboot
+          EOF
+
+      - name: Checkout del propio repositorio
+        uses: actions/checkout@v4
+        with:
+          path: repo
+
+      - name: Esperar 10 segundos
+        uses: ./repo/.github/actions/sleep
+
+      - name: Ejecutar script remoto para configurar los runners
+        run: |
+          for i in {1..30}; do
+            nc -zv $RUNNER_HOST 22 && break
+            echo "Esperando SSH..."
+            sleep 5
+          done
+          
+          echo "$SSH_KEY" > key.pem
+          chmod 600 key.pem
+
+          ssh -o StrictHostKeyChecking=no -i key.pem $RUNNER_USER@$RUNNER_HOST << EOF
+            chmod +x ~/setup_runners.sh
+            export REPO1_TOKEN="$REPO1_TOKEN"
+            export REPO2_TOKEN="$REPO2_TOKEN"
+            export REPO1_NAME="$REPO1_NAME"
+            export REPO2_NAME="$REPO2_NAME"
+            export ORG_OWNER="$ORG_OWNER"
+            bash ~/setup_runners.sh
+          EOF

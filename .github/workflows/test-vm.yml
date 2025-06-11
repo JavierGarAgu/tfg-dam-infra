@@ -1,0 +1,39 @@
+name: VM pública test conectividad
+
+on:
+  workflow_call:
+
+jobs:
+  check-vm:
+    runs-on: ubuntu-latest
+
+    env:
+      SSH_KEY: ${{ secrets.SSH_KEY }}
+      ORG_OWNER: ${{ secrets.ORG_OWNER }}
+      REPO1_NAME: ${{ secrets.REPO1_NAME }}
+      REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      RUNNER_USER: ${{ secrets.RUNNER_USER }}
+      RUNNER_HOST: ${{ secrets.RUNNER_HOST }}
+      BBDD_HOST: ${{ secrets.BBDD_HOST }}
+
+    steps:
+      - name: Checkout repo actions
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.ORG_OWNER }}/${{ env.REPO1_NAME }}
+          ref: main
+          token: ${{ env.REPO_TOKEN }}
+          path: actions
+
+      - name: Crear archivo de llave privada
+        run: |
+          mkdir -p ~/.ssh
+          echo "$SSH_KEY" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+
+      - name: Testear conexión SSH ambas máquinas
+        uses: ./actions/.github/actions/ssh
+        with:
+          ssh_user: ${{ env.RUNNER_USER }}
+          ssh_host: ${{ env.RUNNER_HOST }}
+          bbdd_host: ${{ env.BBDD_HOST }}

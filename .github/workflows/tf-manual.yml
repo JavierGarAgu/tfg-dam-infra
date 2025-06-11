@@ -1,0 +1,34 @@
+name: terraform manual
+
+on:
+  workflow_dispatch:
+    inputs:
+      accion:
+        description: "elige plan apply o destroy"
+        required: true
+        default: plan
+        type: choice
+        options:
+          - plan
+          - apply
+          - destroy
+          
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  llamar_plan:
+    if: ${{ github.event.inputs.accion == 'plan' }}
+    uses: ./.github/workflows/tf-plan.yml
+    secrets: inherit # heredar secretos
+  llamar_apply:
+    if: ${{ github.event.inputs.accion == 'apply' }}
+    uses: ./.github/workflows/tf-apply.yml
+    secrets: inherit # heredar secretos
+
+  llamar_destroy:
+    if: ${{ github.event.inputs.accion == 'destroy' }}
+    uses: ./.github/workflows/tf-destroy.yml
+    secrets: inherit # heredar secretos

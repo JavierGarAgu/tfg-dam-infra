@@ -1,0 +1,57 @@
+name: setup tests + runners + ansible
+
+on:
+  workflow_run:
+    workflows: [terraform apply]
+    types:
+      - completed
+  workflow_dispatch:
+
+jobs:
+  esperar_secrets:
+    name: Esperar para que los secretos se apliquen
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    steps:
+      - name: Checkout del propio repositorio
+        uses: actions/checkout@v4
+        with:
+          path: repo
+      - name: Esperar 10 segundos
+        uses: ./repo/.github/actions/sleep
+
+  test:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    needs: esperar_secrets
+    uses: ./.github/workflows/test-vm.yml
+    secrets: inherit
+
+  crear_runner_repo1:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    needs: test
+    uses: ./.github/workflows/setup-runner-principio.yml
+    secrets: inherit
+
+  usar_ansible:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    needs: crear_runner_repo1
+    uses: ./.github/workflows/setup-ansible.yml
+    secrets: inherit
+
+  crear_runner_finales:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    needs: usar_ansible
+    uses: ./.github/workflows/setup-runners-final.yml
+    secrets: inherit
+
+  cicd:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    needs: crear_runner_finales
+    uses: ./.github/workflows/cicd.yml
+    secrets: inherit
+
+  sync_cicd:
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+    needs: cicd
+    uses: ./.github/workflows/sync-cicd.yml
+    secrets: inherit

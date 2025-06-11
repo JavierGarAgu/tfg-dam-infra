@@ -1,0 +1,133 @@
+name: setup SOLO repo 1
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  setup-runner-repo1:
+    runs-on: ubuntu-latest
+
+    env:
+      REPO_TOKEN: ${{ secrets.REPO_TOKEN }}
+      ORG_OWNER: ${{ secrets.ORG_OWNER }}
+      REPO1_NAME: ${{ secrets.REPO1_NAME }}
+      SSH_KEY: ${{ secrets.SSH_KEY }}
+      RUNNER_USER: ${{ secrets.RUNNER_USER }}
+      RUNNER_HOST: ${{ secrets.RUNNER_HOST }}
+
+    steps:
+      - name: Obtener token y eliminar runner duplicado en GitHub
+        id: cleanup_github
+        run: |
+          set -e
+
+          HEADERS=(-H "Authorization: Bearer $REPO_TOKEN" -H "Accept: application/vnd.github+json")
+          API_URL="https://api.github.com"
+
+          delete_runner_by_name() {
+            local REPO=$1
+            local NAME=$2
+
+            echo "-> Buscando runner '$NAME' en $REPO..."
+            RUNNERS=$(curl -s "${HEADERS[@]}" "$API_URL/repos/${ORG_OWNER}/${REPO}/actions/runners")
+            RUNNER_ID=$(echo "$RUNNERS" | jq ".runners[] | select(.name == \"$NAME\") | .id")
+
+            if [ ! -z "$RUNNER_ID" ]; then
+              echo "-> Runner encontrado con ID $RUNNER_ID. Eliminando..."
+              curl -s -X DELETE "${HEADERS[@]}" "$API_URL/repos/${ORG_OWNER}/${REPO}/actions/runners/$RUNNER_ID"
+              echo "-> Runner $NAME eliminado de GitHub."
+            else
+              echo "-> No se encontró runner con nombre $NAME en $REPO."
+            fi
+          }
+
+          delete_runner_by_name "$REPO1_NAME" "jga-1"
+
+          echo "Obteniendo token para REPO1..."
+          REPO1_TOKEN=$(curl -s -X POST "${HEADERS[@]}" \
+            "$API_URL/repos/${ORG_OWNER}/${REPO1_NAME}/actions/runners/registration-token" | jq -r .token)
+
+          echo "::add-mask::$REPO1_TOKEN"
+          echo "REPO1_TOKEN=$REPO1_TOKEN" >> $GITHUB_ENV
+
+      - name: Generar script de instalación en VM
+        run: |
+          cat << 'EOF' > setup_runner_repo1.sh
+          #!/bin/bash
+          set -e
+
+          TEMP_DIR="$HOME/tmp-gh-runner"
+          mkdir -p "$TEMP_DIR"
+          cd "$TEMP_DIR"
+
+          echo "==> Instalando dependencias..."
+          sudo apt-get update && sudo apt-get install -y curl tar jq psmisc
+
+          echo "==> Descargando GitHub Actions runner..."
+          curl -o actions-runner.tar.gz -L https://github.com/actions/runner/releases/download/v2.315.0/actions-runner-linux-x64-2.315.0.tar.gz
+
+          echo "==> Preparando carpeta temporal para el runner..."
+          mkdir -p runner-tar
+          cp actions-runner.tar.gz runner-tar/
+
+          echo "==> Matando procesos de runners activos..."
+          pkill -f runsvc.sh || true
+          pkill -f Runner.Listener || true
+          sleep 2
+
+          echo "==> Borrando todos los runners existentes..."
+          BASE_DIR="/opt/github-runner"
+          if [ -d "$BASE_DIR" ]; then
+            for d in "$BASE_DIR"/*; do
+              if [ -d "$d" ]; then
+                echo "Parando y eliminando runner en $d"
+                cd "$d"
+                if [ -f "./svc.sh" ]; then
+                  sudo ./svc.sh stop || true
+                  sudo ./svc.sh uninstall || true
+                fi
+              fi
+            done
+            sudo rm -rf "$BASE_DIR"
+          fi
+
+          NAME="jga-1"
+          URL="https://github.com/${ORG_OWNER}/${REPO1_NAME}"
+          TOKEN="$REPO1_TOKEN"
+          LABEL="repo1-runner"
+          DIR="/opt/github-runner/$NAME"
+
+          echo "==> Configurando runner $NAME en $DIR"
+          sudo mkdir -p "$DIR"
+          sudo cp "$TEMP_DIR/runner-tar/actions-runner.tar.gz" "$DIR"
+          cd "$DIR"
+          sudo tar xzf actions-runner.tar.gz
+          sudo chown -R $USER:$USER "$DIR"
+
+          ./config.sh --url "$URL" --token "$TOKEN" --name "$NAME" --labels "$LABEL" --unattended
+
+          sudo ./svc.sh install
+          sudo ./svc.sh start
+
+          echo "==> Runner REPO1 configurado correctamente."
+          EOF
+
+      - name: Transferir script por SSH
+        run: |
+          echo "$SSH_KEY" > key.pem
+          chmod 600 key.pem
+          scp -o StrictHostKeyChecking=no -i key.pem setup_runner_repo1.sh $RUNNER_USER@$RUNNER_HOST:/home/$RUNNER_USER/setup_runner_repo1.sh
+
+      - name: Ejecutar script remoto para configurar el runner de REPO1
+        run: |
+          echo "$SSH_KEY" > key.pem
+          chmod 600 key.pem
+
+          ssh -o StrictHostKeyChecking=no -i key.pem $RUNNER_USER@$RUNNER_HOST << EOF
+            chmod +x ~/setup_runner_repo1.sh
+            export REPO1_TOKEN="$REPO1_TOKEN"
+            export REPO1_NAME="$REPO1_NAME"
+            export ORG_OWNER="$ORG_OWNER"
+            bash ~/setup_runner_repo1.sh
+          EOF

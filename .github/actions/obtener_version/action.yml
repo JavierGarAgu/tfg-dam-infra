@@ -1,0 +1,34 @@
+name: Obtener versión
+description: Extrae la versión desde package.json o pom.xml
+
+inputs:
+  type:
+    description: Tipo de proyecto (frontend o backend)
+    required: true
+  path:
+    description: Ruta al archivo que contiene la versión
+    required: true
+
+outputs:
+  version:
+    description: Versión extraída del archivo
+    value: ${{ steps.version_step.outputs.version }}
+
+runs:
+  using: "composite"
+  steps:
+    - shell: bash
+      id: version_step
+      run: |
+        if [[ "${{ inputs.type }}" == "django" ]]; then
+          VERSION=$(jq -r .version "${{ inputs.path }}")
+        elif [[ "${{ inputs.type }}" == "nginx" ]]; then
+          sudo apt-get update && sudo apt-get install -y libxml2-utils
+          VERSION=$(xmllint --xpath "string(/*[local-name()='project']/*[local-name()='version'])" "${{ inputs.path }}")
+        else
+          echo "Tipo no soportado: ${{ inputs.type }}"
+          exit 1
+        fi
+
+        echo "VERSION: $VERSION"
+        echo "version=$VERSION" >> "$GITHUB_OUTPUT"

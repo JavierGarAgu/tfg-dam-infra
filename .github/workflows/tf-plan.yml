@@ -1,0 +1,72 @@
+name: 'terraform plan'
+
+on: 
+  workflow_call:
+  pull_request:
+    types: [opened]
+    branches:
+      - main
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+env:
+  ARM_CLIENT_ID: "${{ secrets.AZURE_CLIENT_ID }}"
+  ARM_CLIENT_SECRET: "${{secrets.AZURE_CLIENT_SECRET}}"
+  ARM_SUBSCRIPTION_ID: "${{ secrets.AZURE_SUBSCRIPTION_ID }}"
+  ARM_TENANT_ID: "${{ secrets.AZURE_TENANT_ID }}"
+
+jobs:
+  terraform-plan:
+    name: terraform pruebas
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del propio repositorio
+        uses: actions/checkout@v4
+        with:
+          path: terraform
+      
+      - name: instalar Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: preparar node
+        uses: actions/setup-node@v3
+
+      - name: realizar init
+        run: terraform -chdir=${{ github.workspace }}/terraform/iac/modulo init
+
+      - name: realizar plan
+        run: terraform -chdir=${{ github.workspace }}/terraform/iac/modulo plan -out=${{ github.workspace }}/tfplan
+
+      - name: mostrar plan y exportar como output
+        if: github.event_name == 'pull_request'
+        run: |
+          cd ${{ github.workspace }}/terraform/iac/modulo
+          terraform show -no-color ${{ github.workspace }}/tfplan > ${{ github.workspace }}/plan.txt
+
+      - name: sustituir estructura de variables
+        if: github.event_name == 'pull_request'
+        run: sed -i.bak -E 's/\$\{([^}]+)\}/\1/g' ${{ github.workspace }}/plan.txt
+
+      - name: crear output
+        if: github.event_name == 'pull_request'
+        id: mostrarplan
+        run: |
+          {
+            echo 'CONTENIDO<<EOF'
+            cat ${{ github.workspace }}/plan.txt
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: actions/github-script@v7
+        if: github.event_name == 'pull_request'
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `${{ steps.mostrarplan.outputs.CONTENIDO }}`
+            });
