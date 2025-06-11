@@ -16,7 +16,6 @@ env:
   ORG_OWNER: "${{ secrets.ORG_OWNER }}"
   REPO1_NAME: "${{ secrets.REPO1_NAME }}"
   REPO2_NAME: "${{ secrets.REPO2_NAME }}"
-  REPO3_NAME: "${{ secrets.REPO3_NAME }}"
 
 jobs:
   terraform-apply:
@@ -67,7 +66,6 @@ jobs:
           repos = [
               {"owner": os.environ['ORG_OWNER'], "repo": os.environ['REPO1_NAME']},
               {"owner": os.environ['ORG_OWNER'], "repo": os.environ['REPO2_NAME']},
-              {"owner": os.environ['ORG_OWNER'], "repo": os.environ['REPO3_NAME']}
           ]
 
           secrets = {
