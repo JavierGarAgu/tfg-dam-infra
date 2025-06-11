@@ -35,12 +35,16 @@
   args:
     executable: /bin/bash
 
+- name: Pasar init.sql a la VM remota
+  copy:
+    src: /tmp/init.sql
+    dest: /tmp/init.sql
+    mode: '0644'
+
 - name: Ejecutar script SQL para inicializar la base
-  community.postgresql.postgresql_query:
-    db: proyecto_final
-    login_user: "{{ bbdd_user }}"
-    login_password: "{{ bbdd_password }}"
-    query: "{{ lookup('file', '/tmp/init.sql') }}"
+  become: yes
+  become_user: postgres
+  shell: psql -d proyecto_final -f /tmp/init.sql
 
 - name: Habilitar conexiones externas (postgresql.conf)
   lineinfile:
