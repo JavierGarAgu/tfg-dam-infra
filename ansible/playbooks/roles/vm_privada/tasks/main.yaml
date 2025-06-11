@@ -42,9 +42,7 @@
     mode: '0644'
 
 - name: Ejecutar script SQL para inicializar la base
-  become: yes
-  become_user: postgres
-  shell: psql -d proyecto_final -f /tmp/init.sql
+  shell:  PGPASSWORD='{{ bbdd_password }}' psql -d proyecto_final psql -U {{ bbdd_user }} -h localhost -f /tmp/init.sql
 
 - name: Habilitar conexiones externas (postgresql.conf)
   lineinfile:
