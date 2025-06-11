@@ -1,0 +1,8 @@
+- name: Instalación del chart de harbor
+  hosts: web
+  become: yes
+  tasks:
+    - name: Ejecutar rol de harbor
+      import_role:
+        name: harbor
+      tags: always

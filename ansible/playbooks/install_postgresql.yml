@@ -1,0 +1,15 @@
+- name: Descargar paquetes PostgreSQL en VM pública
+  hosts: web
+  become: yes
+  tasks:
+    - name: Ejecutar rol de vm publica
+      import_role:
+        name: vm_publica
+      tags: always
+
+
+- name: Instalar PostgreSQL en VM privada
+  hosts: bbdd
+  become: yes
+  roles:
+    - vm_privada

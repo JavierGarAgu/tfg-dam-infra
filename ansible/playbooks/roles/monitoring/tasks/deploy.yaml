@@ -1,0 +1,69 @@
+- name: Login a Azure con Service Principal
+  ansible.builtin.shell: |
+    az login \
+      --service-principal \
+      --username "{{ azure_client_id }}" \
+      --password "{{ azure_client_secret }}" \
+      --tenant "{{ azure_tenant_id }}"
+    az account set --subscription "{{ azure_subscription_id }}"
+
+- name: Obtener credenciales del AKS
+  ansible.builtin.shell: >
+    az aks get-credentials
+    --resource-group {{ k8s_resource_group }}
+    --name {{ k8s_cluster_name }}
+    --overwrite-existing
+
+- name: Crear namespace monitor si no existe
+  ansible.builtin.shell: |
+    kubectl get namespace {{ grafana_namespace }} || kubectl create namespace {{ grafana_namespace }}
+  changed_when: true
+
+- name: Esperar hasta que el namespace monitor exista
+  ansible.builtin.shell: |
+    kubectl get namespace {{ grafana_namespace }}
+  register: ns_status
+  retries: 5
+  delay: 2
+  until: ns_status.rc == 0
+
+- name: añadir repo de stack
+  ansible.builtin.shell: |
+    helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+
+- name: Crear secret de dashboard para Grafana
+  ansible.builtin.shell: |
+    kubectl create secret generic dashboard-cpu-mem-pods-jga --from-file=cpu-mem-pods-jga.json={{ role_path }}/data/dashboard.json -n {{ grafana_namespace }} --dry-run=client -o yaml | kubectl label -f - grafana_dashboard=1 --local -o yaml | kubectl apply -f -
+
+- name: Instalar kube-prometheus-stack con Grafana credentials y configuración
+  ansible.builtin.shell: >
+    helm upgrade --install monitoring prometheus-community/kube-prometheus-stack
+    --namespace {{ grafana_namespace }}
+    --create-namespace
+    --version 72.6.2
+    -f {{ role_path }}/data/values.yaml
+    --set-string grafana.adminUser="{{ grafana_user }}"
+    --set-string grafana.adminPassword="{{ grafana_pass }}"
+    --set-string assertNoLeakedSecrets="false"
+    --set prometheus.prometheusSpec.maximumStartupDurationSeconds="300"
+
+- name: Esperar a que Grafana tenga IP pública
+  shell: >
+    kubectl get svc monitoring-grafana -n monitor -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  register: grafana_ip
+  retries: 10
+  delay: 10
+  until: grafana_ip.stdout != ""
+
+- name: Obtener IP pública del servicio de Grafana
+  ansible.builtin.shell: >
+    kubectl get svc monitoring-grafana -n {{ grafana_namespace }} -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  register: grafana_ip
+  failed_when: grafana_ip.stdout == ""
+
+- name: Actualizar /etc/hosts con la IP de Grafana
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ grafana_ip.stdout }} {{ grafana_host }}"
+    state: present
+  become: true

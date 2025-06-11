@@ -1,0 +1,6 @@
+- name: Ejecutar despliegue de monitoring
+  import_tasks: deploy.yaml
+
+- name: Ejecutar logout siempre
+  import_tasks: logout.yaml
+  tags: always

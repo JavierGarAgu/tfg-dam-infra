@@ -1,0 +1,12 @@
+#frontend_service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend
+spec:
+  selector:
+    app: frontend
+  ports:
+    - port: {{ .Values.service_frontend.port }}
+      targetPort: 80
+  type: {{ .Values.service_frontend.type }}

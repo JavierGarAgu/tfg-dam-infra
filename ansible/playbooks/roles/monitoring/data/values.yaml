@@ -1,0 +1,9 @@
+grafana:
+  service:
+    type: LoadBalancer
+  sidecar:
+    dashboards:
+      enabled: true
+      searchNamespace: monitor
+      label: grafana_dashboard
+

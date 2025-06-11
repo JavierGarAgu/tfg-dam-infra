@@ -1,0 +1,122 @@
+# roles/vm_publica/tasks/main.yml
+- name: Añadir VM privada a known_hosts para evitar prompt
+  shell: ssh-keyscan -H {{ bbdd_host }} >> ~/.ssh/known_hosts
+  args:
+    creates: ~/.ssh/known_hosts
+  delegate_to: localhost
+
+- name: Actualizar caché de APT
+  apt:
+    update_cache: yes
+
+- name: Instalar apt-rdepends para calcular dependencias
+  apt:
+    name: apt-rdepends
+    state: present
+
+- name: Instalar dependencias para az, docker y kubectl
+  apt:
+    name:
+      - ca-certificates
+      - curl
+      - apt-transport-https
+      - lsb-release
+      - gnupg
+    state: present
+
+- name: Instalar Azure CLI (az)
+  shell: curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+
+- name: Instalar Docker (repositorio oficial)
+  shell: |
+    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    echo \
+      "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
+      $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io
+
+- name: Añadir usuario {{ runner_user }} al grupo docker
+  user:
+    name: "{{ runner_user }}"
+    groups: docker
+    append: yes
+
+- name: Instalar kubectl
+  shell: |
+    curl -LO "https://dl.k8s.io/release/$(curl -sL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+    install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+    rm -f kubectl
+
+- name: Crear directorio temporal para paquetes
+  file:
+    path: /tmp/postgresql_pkgs
+    state: directory
+    mode: '0755'
+
+- name: Obtener lista de paquetes y dependencias de postgresql-12
+  shell: |
+    apt-rdepends postgresql-12 | grep -v "^ "
+  register: postgresql_pkgs_list
+
+- name: Descargar todos los paquetes listados
+  shell: |
+    for pkg in {{ postgresql_pkgs_list.stdout_lines | unique | join(' ') }}; do
+      apt-get download "$pkg"
+    done
+  args:
+    chdir: /tmp/postgresql_pkgs
+
+- name: Comprimir los paquetes
+  shell: tar czf /tmp/postgresql_pkgs.tar.gz -C /tmp postgresql_pkgs
+
+- name: Corregir permisos de la clave privada SSH
+  file:
+    path: /home/{{ runner_user }}/.ssh/id_rsa
+    mode: '0600'
+    owner: "{{ runner_user }}"
+    group: "{{ runner_user }}"
+  delegate_to: localhost
+  become: false
+
+- name: Copiar los paquetes comprimidos a la VM privada sin preguntar host key
+  shell: scp -o StrictHostKeyChecking=accept-new /tmp/postgresql_pkgs.tar.gz {{ runner_user }}@{{ bbdd_host }}:/tmp/
+  delegate_to: localhost
+  become: false
+
+- name: Descomprimir en la VM privada
+  shell: tar xzf /tmp/postgresql_pkgs.tar.gz -C /tmp/
+  delegate_to: "{{ bbdd_host }}"
+
+- name: Autenticarse en Azure con Service Principal
+  shell: |
+    az login --service-principal \
+      --username "{{ azure_client_id }}" \
+      --password "{{ azure_client_secret }}" \
+      --tenant "{{ azure_tenant_id }}"
+    az account set --subscription "{{ azure_subscription_id }}"
+  register: azure_login
+  changed_when: false
+
+- name: Mostrar resultado del login (debug)
+  debug:
+    var: azure_login.stdout_lines
+
+- name: Descargar backup desde Azure Blob Storage
+  shell: >
+    az storage blob download
+    --account-name "{{ storage_account }}"
+    --container-name backups
+    --name proyecto_final.backup
+    --file /tmp/proyecto_final.backup
+  args:
+    warn: false
+
+- name: Pasar backup a VM privada sin preguntar host key
+  shell: scp -o StrictHostKeyChecking=accept-new /tmp/proyecto_final.backup {{ runner_user }}@{{ bbdd_host }}:/tmp/
+  delegate_to: localhost
+  become: false
+
+- name: Esperar 10 segundos a que termine la descarga
+  pause:
+    seconds: 10

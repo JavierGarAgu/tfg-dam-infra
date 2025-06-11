@@ -1,0 +1,42 @@
+expose:
+  type: loadBalancer
+  tls:
+    enabled: true
+    certSource: secret
+    auto:
+      commonName: pruebas
+    secret:
+      secretName: harbor-cert
+      notarySecretName: harbor-cert
+
+externalURL: https://pruebas
+
+harborAdminPassword: "Harbor@12345"
+
+chartmuseum:
+  enabled: false
+
+trivy:
+  enabled: false
+
+notary:
+  enabled: false
+
+redis:
+  enabled: false
+
+persistence:
+  enabled: true
+  persistentVolumeClaim:
+    registry:
+      size: 1Gi
+    database:
+      size: 1Gi
+    jobservice:
+      size: 1Gi
+    redis:
+      enabled: false
+    trivy:
+      enabled: false
+    chartmuseum:
+      enabled: false

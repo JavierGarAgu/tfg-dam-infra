@@ -1,0 +1,27 @@
+imagen_backend:
+  repository: acrjgarcia123.azurecr.io/jga-backend
+  tag: 1
+  pullPolicy: IfNotPresent
+
+service_backend:
+  type: ClusterIP
+  port: 8080
+
+env:
+  SPRING_DB_HOST: 10.0.1.5
+  SPRING_DB_PORT: "5432"
+  SPRING_DB_NAME: proyecto_final
+  SPRING_DB_USER: root
+  SPRING_DB_PASSWORD: password
+
+resources: {}
+
+imagen_frontend:
+  repository: acrjgarcia123.azurecr.io/jga-frontend
+  tag: 1
+  pullPolicy: IfNotPresent
+ 
+service_frontend:
+  type: LoadBalancer
+  port: 80
+ 

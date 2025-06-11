@@ -1,0 +1,8 @@
+- name: Backup de PostgreSQL desde VM pública
+  hosts: web
+  become: yes
+  tasks:
+    - name: Ejecutar rol de copia
+      import_role:
+        name: copia
+      tags: always

@@ -1,0 +1,4 @@
+db_name: proyecto_final
+db_user: root
+db_password: password
+backup_dir: /home/azureuser/backups

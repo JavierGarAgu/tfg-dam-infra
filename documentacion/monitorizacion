@@ -1,0 +1,7 @@
+cd  C:\Users\jgarcia\Desktop\monitorizacion\monitoring-exercise-JavierGarciaInformatico\soluciones\ficheros
+
+kubectl create secret generic dashboard-cpu-mem-pods-jga --from-file=cpu-mem-pods-jga.json=./dashboard.json -n monitor --dry-run=client -o yaml | kubectl label -f - grafana_dashboard=1 --local -o yaml | kubectl apply -f -
+
+helm install my-kube-prometheus-stack prometheus-community/kube-prometheus-stack --version 72.6.2 -n monitor --create-namespace -f ./values.yaml --set-string assertNoLeakedSecrets=false --set prometheus.prometheusSpec.maximumStartupDurationSeconds=300
+
+ver docu de monitorizacion para meter el dashboard

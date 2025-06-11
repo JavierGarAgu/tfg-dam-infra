@@ -1,0 +1,39 @@
+#backend_deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: {{ .Values.imagen_backend.repository }}:{{ .Values.imagen_backend.tag }}
+          imagePullPolicy: {{ .Values.imagen_backend.pullPolicy }}
+          ports:
+            - containerPort: {{ .Values.service_backend.port }}
+          env:
+            - name: SPRING_DB_HOST
+              value: "{{ .Values.env.SPRING_DB_HOST }}"
+            - name: SPRING_DB_PORT
+              value: "{{ .Values.env.SPRING_DB_PORT }}"
+            - name: SPRING_DB_NAME
+              value: "{{ .Values.env.SPRING_DB_NAME }}"
+            - name: SPRING_DB_USER
+              value: "{{ .Values.env.SPRING_DB_USER }}"
+            - name: SPRING_DB_PASSWORD
+              value: "{{ .Values.env.SPRING_DB_PASSWORD }}"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "0.2"
+            limits:
+              memory: "512Mi"
+              cpu: "0.5"

@@ -1,0 +1,4 @@
+- name: Desloguearse de Azure
+  shell: az logout
+  args:
+    warn: false

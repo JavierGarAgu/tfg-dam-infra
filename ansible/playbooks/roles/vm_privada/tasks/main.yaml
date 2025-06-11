@@ -1,0 +1,62 @@
+- name: Obtener lista de paquetes .deb descargados
+  find:
+    paths: /tmp/postgresql_pkgs
+    patterns: "*.deb"
+  register: deb_files
+
+- name: Instalar paquetes .deb en VM privada (sin internet, usando dpkg)
+  command: dpkg -i "{{ item.path }}"
+  loop: "{{ deb_files.files }}"
+  register: dpkg_result
+  ignore_errors: yes
+
+- name: Arreglar dependencias rotas localmente (sin usar internet)
+  command: apt-get install -f -y
+  when: dpkg_result is failed
+
+- name: Habilitar PostgreSQL
+  service:
+    name: postgresql
+    state: started
+    enabled: yes
+
+- name: Crear usuario {{ bbdd_user }} si no existe
+  shell: |
+    sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='{{ bbdd_user }}'" | grep -q 1 || \
+    sudo -u postgres psql -c "CREATE USER {{ bbdd_user }} WITH PASSWORD '{{ bbdd_password }}';"
+  args:
+    executable: /bin/bash
+
+- name: Importar backup en base de datos proyecto_final
+  shell: |
+    sudo -u postgres dropdb --if-exists proyecto_final
+    sudo -u postgres createdb -O {{ bbdd_user }} proyecto_final
+    sudo -u postgres pg_restore -d proyecto_final /tmp/proyecto_final.backup
+  args:
+    executable: /bin/bash
+
+- name: Habilitar conexiones externas (postgresql.conf)
+  lineinfile:
+    path: /etc/postgresql/12/main/postgresql.conf
+    regexp: '^#?listen_addresses\s*='
+    line: "listen_addresses = '*'"
+    state: present
+
+- name: Permitir acceso remoto con md5 (pg_hba.conf)
+  lineinfile:
+    path: /etc/postgresql/12/main/pg_hba.conf
+    line: "host    all    all    10.0.0.0/16    md5"
+    insertafter: EOF
+    state: present
+
+- name: Permitir acceso remoto con md5 (pg_hba.conf)
+  lineinfile:
+    path: /etc/postgresql/12/main/pg_hba.conf
+    line: "host    all    all    10.200.0.0/16    md5"
+    insertafter: EOF
+    state: present
+
+- name: Reiniciar PostgreSQL
+  service:
+    name: postgresql
+    state: restarted

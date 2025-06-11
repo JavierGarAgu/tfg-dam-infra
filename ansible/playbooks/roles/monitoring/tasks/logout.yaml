@@ -1,0 +1,7 @@
+- name: Logout de AKS (elimina credenciales locales del kubeconfig)
+  ansible.builtin.shell: |
+    kubectl config delete-context $(kubectl config current-context)
+  ignore_errors: true
+
+- name: Logout de Azure
+  ansible.builtin.shell: az logout

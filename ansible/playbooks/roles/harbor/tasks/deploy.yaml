@@ -1,0 +1,186 @@
+- name: Instalar Helm si no existe
+  ansible.builtin.shell: |
+    curl https://raw.githubusercontent.com/helm/helm/master/scripts/get-helm-3 | bash
+  args:
+    creates: /usr/local/bin/helm
+
+- name: Generar contraseña aleatoria de 10 caracteres para admin de Harbor
+  ansible.builtin.set_fact:
+    harbor_admin_pass: "{{ lookup('password', '/dev/null length=10 chars=ascii_letters,digits') }}"
+
+- name: Login a Azure con Service Principal
+  ansible.builtin.shell: |
+    az login \
+      --service-principal \
+      --username "{{ azure_client_id }}" \
+      --password "{{ azure_client_secret }}" \
+      --tenant "{{ azure_tenant_id }}"
+    az account set --subscription "{{ azure_subscription_id }}"
+
+- name: Obtener credenciales del AKS
+  ansible.builtin.shell: >
+    az aks get-credentials
+    --resource-group {{ k8s_resource_group }}
+    --name {{ k8s_cluster_name }}
+    --overwrite-existing
+
+- name: Añadir repo de Helm de Harbor
+  ansible.builtin.shell: helm repo add harbor https://helm.goharbor.io
+  args:
+    creates: ~/.cache/helm/repository/harbor-index.yaml
+
+- name: Actualizar repos de Helm
+  ansible.builtin.shell: helm repo update
+
+- name: Crear archivo de configuración para certificado con SAN
+  ansible.builtin.copy:
+    dest: "{{ role_path }}/san.cnf"
+    content: |
+      [req]
+      default_bits = 2048
+      prompt = no
+      default_md = sha256
+      req_extensions = req_ext
+      distinguished_name = dn
+
+      [dn]
+      CN = {{ harbor_url }}
+
+      [req_ext]
+      subjectAltName = @alt_names
+
+      [alt_names]
+      DNS.1 = {{ harbor_url }}
+
+- name: Generar certificado TLS con SANs para Harbor
+  ansible.builtin.shell: |
+    openssl req -x509 -nodes -days 365 -newkey rsa:2048 \
+      -keyout tls.key -out tls.crt \
+      -config {{ role_path }}/san.cnf \
+      -extensions req_ext
+  args:
+    creates: tls.crt
+  register: gen_cert
+  changed_when: "'tls.crt' in gen_cert.stdout or gen_cert.rc == 0"
+
+- name: Instalar el certificado TLS en el sistema de confianza
+  ansible.builtin.shell: |
+    cp tls.crt /usr/local/share/ca-certificates/{{ harbor_url }}.crt
+    update-ca-certificates
+  become: true
+
+- name: Borrar secreto harbor-cert si existe
+  ansible.builtin.shell: |
+    kubectl delete secret harbor-cert -n harbor --ignore-not-found
+  changed_when: true
+
+- name: Crear namespace harbor si no existe
+  ansible.builtin.shell: |
+    kubectl get namespace harbor || kubectl create namespace harbor
+  changed_when: true
+
+- name: Esperar hasta que el namespace harbor exista
+  ansible.builtin.shell: |
+    kubectl get namespace harbor
+  register: ns_status
+  retries: 5
+  delay: 2
+  until: ns_status.rc == 0
+
+- name: Crear secreto TLS harbor-cert en Kubernetes con el nuevo certificado
+  ansible.builtin.shell: |
+    kubectl create secret tls harbor-cert --key tls.key --cert tls.crt -n harbor
+
+- name: Instalar Harbor usando values.yaml con override de adminPassword, commonName y externalURL (https concatenado directo)
+  ansible.builtin.shell: >
+    helm upgrade --install harbor harbor/harbor
+    --namespace harbor
+    --create-namespace
+    -f {{ role_path }}/data/values.yaml
+    --set harborAdminPassword="{{ harbor_admin_pass }}"
+    --set expose.tls.auto.commonName="{{ harbor_url }}"
+    --set externalURL="https://{{ harbor_url }}"
+  args:
+    chdir: "{{ role_path }}"
+
+- name: Esperar 60 segundos a que Harbor arranque
+  ansible.builtin.pause:
+    seconds: 60
+
+- name: Obtener IP pública del servicio Harbor (LoadBalancer)
+  ansible.builtin.shell: >
+    kubectl get svc harbor -n harbor -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+  register: harbor_public_ip
+  failed_when: harbor_public_ip.stdout == ""
+
+- name: Actualizar /etc/hosts para {{ harbor_url }} con IP pública
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    line: "{{ harbor_public_ip.stdout }} {{ harbor_url }}"
+    state: present
+  become: true
+
+- name: Esperar que la API de Harbor responda antes de crear usuario
+  ansible.builtin.uri:
+    url: "https://{{ harbor_url }}/api/v2.0/users"
+    method: GET
+    user: "{{ harbor_admin_user }}"
+    password: "{{ harbor_admin_pass }}"
+    force_basic_auth: yes
+    validate_certs: no
+    status_code: 200
+  register: harbor_api_check
+  retries: 10
+  delay: 10
+  until: harbor_api_check.status == 200
+
+- name: Crear usuario jga en Harbor
+  ansible.builtin.shell: |
+    curl -k -u {{ harbor_admin_user }}:{{ harbor_admin_pass }} -X POST "https://{{ harbor_url }}/api/v2.0/users" \
+      -H "Content-Type: application/json" \
+      -d '{"username": "{{ jga_user }}", "email": "jga@fake.com", "password": "{{ jga_pass }}", "realname": "JGA"}'
+  register: create_user
+
+- name: Pausa de 3 segundos después de crear usuario
+  ansible.builtin.pause:
+    seconds: 3
+
+- name: Añadir usuario {{ jga_user }} como admin al proyecto {{ project }}
+  ansible.builtin.shell: |
+    curl -k -u {{ harbor_admin_user }}:{{ harbor_admin_pass }} -X POST "https://{{ harbor_url }}/api/v2.0/projects/{{ project }}/members" \
+      -H "Content-Type: application/json" \
+      -d '{
+        "role_id": 1,
+        "member_user": {
+          "username": "{{ jga_user }}"
+        }
+      }'
+  register: add_member
+
+- name: Pausa de 3 segundos después de añadir usuario a grupo
+  ansible.builtin.pause:
+    seconds: 3
+
+- name: Hacer login al registry con helm como {{ jga_user }}
+  ansible.builtin.shell: |
+    helm registry login {{ harbor_url }} --username {{ jga_user }} --password {{ jga_pass }}
+
+- name: Obtener nombre del chart desde Chart.yaml
+  ansible.builtin.shell: |
+    grep '^name:' ../../charts/proyecto_helm/Chart.yaml | awk '{print $2}'
+  register: chart_name
+
+- name: Obtener versión del chart desde Chart.yaml
+  ansible.builtin.shell: |
+    grep '^version:' ../../charts/proyecto_helm/Chart.yaml | awk '{print $2}'
+  register: chart_version
+
+- name: Empaquetar el chart real desde charts/proyecto_helm
+  ansible.builtin.shell: |
+    helm package ../../charts/proyecto_helm -d /tmp/
+  args:
+    creates: "/tmp/{{ chart_name.stdout }}-{{ chart_version.stdout }}.tgz"
+
+- name: Subir el chart real al proyecto {{ project }} en Harbor
+  ansible.builtin.shell: |
+    helm push /tmp/{{ chart_name.stdout }}-{{ chart_version.stdout }}.tgz oci://{{ harbor_url }}/{{ project }}

@@ -1,0 +1,77 @@
+---
+
+- name: Crear directorio para backups
+  file:
+    path: /var/backups
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Instalar cliente de PostgreSQL y Azure CLI
+  apt:
+    name:
+      - postgresql-client
+      - azure-cli
+    state: present
+    update_cache: yes
+
+- name: Autenticarse en Azure con Service Principal
+  shell: |
+    az login --service-principal \
+      --username "{{ azure_client_id }}" \
+      --password "{{ azure_client_secret }}" \
+      --tenant "{{ azure_tenant_id }}"
+  register: azure_login
+  changed_when: false
+
+- name: Mostrar resultado del login (debug)
+  debug:
+    var: azure_login.stdout_lines
+
+- name: Realizar backup inicial de la base de datos
+  shell: >
+    PGPASSWORD="{{ db_password }}" pg_dump
+    -h {{ db_host }}
+    -U {{ db_user }}
+    -d proyecto_final
+    -F c -b -v
+    -f /var/backups/proyecto_final.backup
+  args:
+    warn: false
+
+- name: Subir backup a Azure Blob Storage
+  shell: >
+    az storage blob upload
+    --account-name "{{ storage_account }}"
+    --container-name backups
+    --name proyecto_final.backup
+    --file /var/backups/proyecto_final.backup
+    --overwrite
+  args:
+    warn: false
+
+- name: Programar tarea cron diaria para backup + subida a blob
+  cron:
+    name: "Backup diario de proyecto_final y subida a Azure Blob"
+    user: root
+    minute: "{{ ansible_date_time.minute }}"
+    hour: "{{ ansible_date_time.hour }}"
+    job: >
+      PGPASSWORD="{{ db_password }}" pg_dump
+      -h {{ db_host }}
+      -U {{ db_user }}
+      -d proyecto_final
+      -F c -b -v
+      -f /var/backups/proyecto_final.backup &&
+      az login --service-principal
+      --username "{{ azure_client_id }}"
+      --password "{{ azure_client_secret }}"
+      --tenant "{{ azure_tenant_id }}" &&
+      az storage blob upload
+      --account-name "{{ storage_account }}"
+      --container-name backups
+      --name proyecto_final.backup
+      --file /var/backups/proyecto_final.backup
+      --overwrite &&
+      az logout
