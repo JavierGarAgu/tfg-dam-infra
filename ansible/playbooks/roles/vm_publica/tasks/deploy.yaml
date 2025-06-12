@@ -54,38 +54,31 @@
     state: directory
     mode: '0755'
 
-- name: Añadir repositorio oficial de PostgreSQL
-  apt_repository:
-    repo: "deb http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
-    state: present
-    filename: pgdg
+- name: Crear archivo del repo de PostgreSQL
+  shell: |
+    echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
+  args:
+    creates: /etc/apt/sources.list.d/pgdg.list
+  become: true
 
-- name: Añadir clave pública del repositorio PostgreSQL
-  apt_key:
-    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
-    state: present
+- name: Añadir la clave pública del repo PostgreSQL
+  shell: |
+    curl -s https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+  args:
+    warn: false
+  become: true
 
-- name: Actualizar caché de paquetes APT
-  apt:
-    update_cache: yes
-
-- name: Verificar que postgresql-14 esté disponible
-  command: apt-cache policy postgresql-14
-  register: postgres_cache
-  changed_when: false
-
-- name: Mostrar versión candidata de postgresql-14
-  debug:
-    msg: "{{ postgres_cache.stdout_lines }}"
-
-- name: Actualizar caché de paquetes APT
-  apt:
-    update_cache: yes
+- name: Actualizar la caché de APT
+  shell: sudo apt-get update
+  register: apt_update_output
+  changed_when: "'Fetched' in apt_update_output.stdout or 'Get:' in apt_update_output.stdout"
+  become: true
 
 - name: Verificar que PostgreSQL 14 esté disponible
-  shell: apt-cache policy postgresql-14
-  register: postgres_pkg_check
+  shell: sudo apt-cache policy postgresql-14
+  register: postgresql_policy
   changed_when: false
+  become: true
 
 - name: Obtener lista de paquetes y dependencias de postgresql-14
   shell: |
