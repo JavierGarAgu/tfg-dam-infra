@@ -54,16 +54,23 @@
     state: directory
     mode: '0755'
 
+- name: Crear directorio para llaves GPG de repositorios
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Descargar y guardar clave GPG del repo PostgreSQL
+  get_url:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    dest: /etc/apt/keyrings/postgres.gpg
+    mode: '0644'
+
 - name: Añadir repositorio oficial de PostgreSQL 14
   apt_repository:
-    repo: "deb http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+    repo: "deb [signed-by=/etc/apt/keyrings/postgres.gpg] http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
     state: present
     filename: "pgdg"
-
-- name: Añadir clave pública del repo de PostgreSQL
-  apt_key:
-    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
-    state: present
 
 - name: Actualizar caché de paquetes APT
   apt:
