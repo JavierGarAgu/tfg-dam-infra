@@ -25,4 +25,6 @@ spec:
         - name: nginx-config-volume
           configMap:
             name: nginx-config
-
+            items:
+              - key: default.conf
+                path: default.conf
