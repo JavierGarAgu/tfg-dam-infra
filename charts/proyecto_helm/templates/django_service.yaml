@@ -1,11 +1,11 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: django
+  name: {{ .Values.django.serviceName }}
 spec:
   type: ClusterIP
   selector:
     app: django
   ports:
-    - port: 8000
-      targetPort: 8000
+    - port: {{ .Values.django.containerPort }}
+      targetPort: {{ .Values.django.containerPort }}

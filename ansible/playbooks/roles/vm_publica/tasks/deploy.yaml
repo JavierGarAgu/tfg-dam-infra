@@ -102,24 +102,24 @@
   debug:
     var: azure_login.stdout_lines
 
-# - name: Descargar backup desde Azure Blob Storage
-#   shell: >
-#     az storage blob download
-#     --account-name "{{ storage_account }}"
-#     --container-name backups
-#     --name proyecto_final.backup
-#     --file /tmp/proyecto_final.backup
-#   args:
-#     warn: false
+- name: Descargar backup desde Azure Blob Storage
+  shell: >
+    az storage blob download
+    --account-name "{{ storage_account }}"
+    --container-name backups
+    --name proyecto_final.backup
+    --file /tmp/proyecto_final.backup
+  args:
+    warn: false
 
-- name: Copiar values.yaml a la VM
-  copy:
-    src: "{{ role_path }}/data/init.sql"
-    dest: /tmp/init.sql
+# - name: Copiar initsql a la VM
+#   copy:
+#     src: "{{ role_path }}/data/init.sql"
+#     dest: /tmp/init.sql
 
 
 - name: Pasar backup a VM privada sin preguntar host key
-  shell: scp -o StrictHostKeyChecking=accept-new /tmp/init.sql {{ runner_user }}@{{ bbdd_host }}:/tmp/
+  shell: scp -o StrictHostKeyChecking=accept-new /tmp/proyecto_final.backup {{ runner_user }}@{{ bbdd_host }}:/tmp/
   delegate_to: localhost
   become: false
 
