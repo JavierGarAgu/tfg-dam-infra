@@ -9,7 +9,7 @@ jobs:
     runs-on: [self-hosted]
     outputs:
       version_django: ${{ steps.f_version.outputs.version }}
-      version_nginx: ${{ steps.b_version.outputs.version }}
+      # version_nginx: ${{ steps.b_version.outputs.version }}
     env:
       AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
       AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
@@ -59,18 +59,18 @@ jobs:
           type: django
           path: django/aplicacion/package.json
 
-      - name: Obtener versión nginx
-        id: b_version
-        uses: ./actions/.github/actions/obtener_version
-        with:
-          type: nginx
-          path: django/nginx/pom.xml
+      # - name: Obtener versión nginx
+      #   id: b_version
+      #   uses: ./actions/.github/actions/obtener_version
+      #   with:
+      #     type: nginx
+      #     path: django/nginx/pom.xml
 
       - name: DEBUG version django
         run: echo ${{ steps.f_version.outputs.version }}
 
-      - name: DEBUG version nginx
-        run: echo ${{ steps.b_version.outputs.version }}
+      # - name: DEBUG version nginx
+      #   run: echo ${{ steps.b_version.outputs.version }}
 
       - name: Build y push imagen django
         uses: ./actions/.github/actions/docker_build
@@ -80,13 +80,13 @@ jobs:
           version: ${{ steps.f_version.outputs.version }}
           acr_name: ${{ env.ACR_NAME }}
 
-      - name: Build y push imagen nginx
-        uses: ./actions/.github/actions/docker_build
-        with:
-          image_name: nginx
-          context_path: ./django/nginx
-          version: ${{ steps.b_version.outputs.version }}
-          acr_name: ${{ env.ACR_NAME }}
+      # - name: Build y push imagen nginx
+      #   uses: ./actions/.github/actions/docker_build
+      #   with:
+      #     image_name: nginx
+      #     context_path: ./django/nginx
+      #     version: ${{ steps.b_version.outputs.version }}
+      #     acr_name: ${{ env.ACR_NAME }}
 
   pre-CD:
     needs: CI
@@ -133,7 +133,7 @@ jobs:
       AKS_NAME: ${{ secrets.AKS_NAME }}
       RG_NAME: ${{ secrets.RG_NAME }}
       F_VERSION: ${{ needs.CI.outputs.version_django }}
-      B_VERSION: ${{ needs.CI.outputs.version_nginx }}
+      # B_VERSION: ${{ needs.CI.outputs.version_nginx }}
       HARBOR_URL: ${{ secrets.HARBOR_URL }}
       HARBOR_USER: ${{ secrets.HARBOR_USER }}
       HARBOR_PASS: ${{ secrets.HARBOR_PASS }}
@@ -164,6 +164,9 @@ jobs:
             --username $HARBOR_USER \
             --password $HARBOR_PASS
 
+    # --set nginx.image=$ACR_NAME.azurecr.io/nginx \
+    # --set nginx.tag=$B_VERSION \
+
       - name: Helm upgrade desde Harbor
         run: |
           helm upgrade --install rrhh oci://$HARBOR_URL/library/$CHART_NAME \
@@ -172,8 +175,6 @@ jobs:
             --create-namespace \
             --set django.image=$ACR_NAME.azurecr.io/django \
             --set django.tag=$F_VERSION \
-            --set nginx.image=$ACR_NAME.azurecr.io/nginx \
-            --set nginx.tag=$B_VERSION \
             --set django.env.POSTGRES_HOST=$BBDD_HOST \
             --set django.env.POSTGRES_USER=$BBDD_USER \
             --set django.env.POSTGRES_PASSWORD=$BBDD_PASS

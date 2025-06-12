@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: django
-          image: {{ .Values.django.image }}
+          image: {{ .Values.django.image }}:{{ .Values.django.tag }}
           ports:
             - containerPort: {{ .Values.django.containerPort }}
           env:
@@ -28,3 +28,4 @@ spec:
               value: {{ .Values.django.env.POSTGRES_HOST | quote }}
             - name: POSTGRES_PORT
               value: {{ .Values.django.env.POSTGRES_PORT | quote }}
+

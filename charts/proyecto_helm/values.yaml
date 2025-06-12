@@ -1,18 +1,17 @@
 django:
   image: miapp-django
-  tag: 1
+  tag: "1"
   replicas: 2
+  containerPort: 8000
+  serviceName: django
   env:
     POSTGRES_DB: proyecto_final
     POSTGRES_USER: usuario
     POSTGRES_PASSWORD: contraseña
     POSTGRES_HOST: host
     POSTGRES_PORT: "5432"
-  containerPort: 8000
 
 nginx:
-  image: miapp-nginx
-  tag: 1
   replicas: 2
   containerPort: 80
   service:
