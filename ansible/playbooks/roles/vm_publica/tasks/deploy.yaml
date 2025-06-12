@@ -60,11 +60,12 @@
     state: directory
     mode: '0755'
 
-- name: Descargar y guardar clave GPG del repo PostgreSQL
-  get_url:
-    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
-    dest: /etc/apt/keyrings/postgres.gpg
-    mode: '0644'
+- name: Descargar y convertir la clave GPG de PostgreSQL
+  shell: |
+    curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /etc/apt/keyrings/postgres.gpg
+  args:
+    creates: /etc/apt/keyrings/postgres.gpg
+
 
 - name: Añadir repositorio oficial de PostgreSQL 14
   apt_repository:
