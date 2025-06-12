@@ -4,4 +4,4 @@ kubectl create secret generic dashboard-cpu-mem-pods-jga --from-file=cpu-mem-pod
 
 helm install my-kube-prometheus-stack prometheus-community/kube-prometheus-stack --version 72.6.2 -n monitor --create-namespace -f ./values.yaml --set-string assertNoLeakedSecrets=false --set prometheus.prometheusSpec.maximumStartupDurationSeconds=300
 
-ver docu de monitorizacion para meter el dashboard
+ver docu de monitorizacion para meter el dashboard pruebas
