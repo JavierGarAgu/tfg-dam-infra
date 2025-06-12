@@ -54,9 +54,29 @@
     state: directory
     mode: '0755'
 
-- name: Obtener lista de paquetes y dependencias de postgresql-12
+- name: Añadir repositorio oficial de PostgreSQL 14
+  apt_repository:
+    repo: "deb http://apt.postgresql.org/pub/repos/apt {{ ansible_distribution_release }}-pgdg main"
+    state: present
+    filename: "pgdg"
+
+- name: Añadir clave pública del repo de PostgreSQL
+  apt_key:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    state: present
+
+- name: Actualizar caché de paquetes APT
+  apt:
+    update_cache: yes
+
+- name: Verificar que PostgreSQL 14 esté disponible
+  shell: apt-cache policy postgresql-14
+  register: postgres_pkg_check
+  changed_when: false
+
+- name: Obtener lista de paquetes y dependencias de postgresql-14
   shell: |
-    apt-rdepends postgresql-12 | grep -v "^ "
+    apt-rdepends postgresql-14 | grep -v "^ "
   register: postgresql_pkgs_list
 
 - name: Descargar todos los paquetes listados
@@ -112,14 +132,14 @@
   args:
     warn: false
 
-# - name: Copiar initsql a la VM
-#   copy:
-#     src: "{{ role_path }}/data/init.sql"
-#     dest: /tmp/init.sql
+- name: Copiar initsql a la VM
+  copy:
+    src: "{{ role_path }}/data/init.sql"
+    dest: /tmp/init.sql
 
 
 - name: Pasar backup a VM privada sin preguntar host key
-  shell: scp -o StrictHostKeyChecking=accept-new /tmp/proyecto_final.backup {{ runner_user }}@{{ bbdd_host }}:/tmp/
+  shell: scp -o StrictHostKeyChecking=accept-new /tmp/init.sql {{ runner_user }}@{{ bbdd_host }}:/tmp/
   delegate_to: localhost
   become: false
 
