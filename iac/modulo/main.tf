@@ -4,7 +4,7 @@ terraform {
 
   backend "azurerm" {
     resource_group_name   = "rg-jgarcia-dvfinlab"
-    storage_account_name  = "stajgarciadvfinlab"
+    storage_account_name  = "jgadam"
     container_name        = "estado"
     key                   = "terraform.tfstate"
   }
