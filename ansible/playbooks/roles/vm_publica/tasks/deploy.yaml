@@ -128,15 +128,15 @@
   debug:
     var: azure_login.stdout_lines
 
-- name: Descargar backup desde Azure Blob Storage
-  shell: >
-    az storage blob download
-    --account-name "{{ storage_account }}"
-    --container-name backups
-    --name proyecto_final.backup
-    --file /tmp/proyecto_final.backup
-  args:
-    warn: false
+# - name: Descargar backup desde Azure Blob Storage
+#   shell: >
+#     az storage blob download
+#     --account-name "{{ storage_account }}"
+#     --container-name backups
+#     --name proyecto_final.backup
+#     --file /tmp/proyecto_final.backup
+#   args:
+#     warn: false
 
 - name: Copiar initsql a la VM
   copy:
