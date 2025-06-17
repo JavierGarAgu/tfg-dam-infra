@@ -11,7 +11,7 @@
 - name: Instalar cliente de PostgreSQL y Azure CLI
   apt:
     name:
-      - postgresql-client
+      - postgresql-client-14
       - azure-cli
     state: present
     update_cache: yes
