@@ -33,13 +33,13 @@
 #     dest: /tmp/proyecto_final.backup
 #     mode: '0644'
 
-# - name: Importar backup en base de datos proyecto_final
-#   shell: |
-#     sudo -u postgres dropdb --if-exists proyecto_final
-#     sudo -u postgres createdb -O {{ bbdd_user }} proyecto_final
-#     sudo -u postgres pg_restore -d proyecto_final /tmp/proyecto_final.backup
-#   args:
-#     executable: /bin/bash
+- name: Importar backup en base de datos proyecto_final
+  shell: |
+    sudo -u postgres dropdb --if-exists proyecto_final
+    sudo -u postgres createdb -O {{ bbdd_user }} proyecto_final
+# sudo -u postgres pg_restore -d proyecto_final /tmp/proyecto_final.backup
+  args:
+    executable: /bin/bash
 
 - name: Pasar init.sql a la VM remota
   copy:
