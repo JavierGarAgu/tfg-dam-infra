@@ -27,28 +27,28 @@
   args:
     executable: /bin/bash
 
-# - name: backup perms
-#   copy:
-#     src: /tmp/proyecto_final.backup
-#     dest: /tmp/proyecto_final.backup
-#     mode: '0644'
+- name: backup perms
+  copy:
+    src: /tmp/proyecto_final.backup
+    dest: /tmp/proyecto_final.backup
+    mode: '0644'
 
 - name: Importar backup en base de datos proyecto_final
   shell: |
     sudo -u postgres dropdb --if-exists proyecto_final
     sudo -u postgres createdb -O {{ bbdd_user }} proyecto_final
-# sudo -u postgres pg_restore -d proyecto_final /tmp/proyecto_final.backup
+    sudo -u postgres pg_restore -d proyecto_final /tmp/proyecto_final.backup
   args:
     executable: /bin/bash
 
-- name: Pasar init.sql a la VM remota
-  copy:
-    src: /tmp/init.sql
-    dest: /tmp/init.sql
-    mode: '0644'
+# - name: Pasar init.sql a la VM remota
+#   copy:
+#     src: /tmp/init.sql
+#     dest: /tmp/init.sql
+#     mode: '0644'
 
-- name: Ejecutar script SQL para inicializar la base
-  shell:  PGPASSWORD='{{ bbdd_password }}' psql -d proyecto_final psql -U {{ bbdd_user }} -h localhost -f /tmp/init.sql
+# - name: Ejecutar script SQL para inicializar la base
+#   shell:  PGPASSWORD='{{ bbdd_password }}' psql -d proyecto_final psql -U {{ bbdd_user }} -h localhost -f /tmp/init.sql
 
 - name: Habilitar conexiones externas (postgresql.conf)
   lineinfile:
